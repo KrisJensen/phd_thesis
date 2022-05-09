@@ -1,0 +1,201 @@
+\section{Gaussian processes}
+
+We model a function $x = f(t) + \epsilon$
+In a GP we assume the data is drawn from a distribution with some kernel function
+
+Prior specified by covariance function
+\begin{equation}
+{\bf f}|_{\mathcal{M}} \sim \mathcal{N}(0, {\bf K})
+\end{equation}
+
+Likelihod of model
+\begin{equation}
+{\bf x}|_{\bf f} \sim \mathcal{N}({\bf f}, \sigma^2_n {\bf I})
+\end{equation}
+
+Posterior
+\begin{equation}
+f|_{{\bf t}, {\bf x}, \mathcal{M}} \sim p({\bf x}|\mathcal{M}, f, {\bf t}) p(f | \mathcal{M}) = \mathcal{N}(\mu, \sigma^2)
+\end{equation}
+Where
+\begin{equation}
+\mu(t^*) = k(t^*, {\bf t}) \left [ K({\bf t}, {\bf t}) + \sigma^2_n {\bf I} \right ]^{-1} {\bf x}
+\end{equation}
+\begin{equation}
+\sigma^2(t^*, t^{*'}) = k(t*, t*') - k(t^*, {\bf t}) \left [ K({\bf t}, {\bf t}) + \sigma^2_n {\bf I} \right ]^{-1} k( {\bf t}, t^{*'})
+\end{equation}
+
+We can also write down the predictive distribution (predict the x value of point at $t^*$ with variance) which is the same as above (noise has zero mean) except that
+\begin{equation}
+\sigma_{predictive}^2(t^*, t^*) = \sigma_{posterior}^2(t^*, t^*) + \sigma^2_{noise}
+\end{equation}
+
+We know want the marginal likelihood (marginalizing out ${\bf f}$) and get
+\begin{equation}
+p( {\bf x} | {\bf t}, \mathcal{M} ) = \int_{\bf f}{ p({\bf x}, {\bf f})d{\bf f}} = \int_{\bf f}{ p({\bf x} | {\bf f}) p({\bf f})d{\bf f}}
+= \int_{\bf f}{  \mathcal{N}(0, {\bf K})  \mathcal{N}({\bf f}, \sigma^2_n {\bf I}) d{\bf f}}  
+\end{equation}
+This gives (remember that the mean of $\bf f$ is zero)
+\begin{equation}
+p( {\bf x} | {\bf t}, \mathcal{M} ) = \mathcal{N}(0, {\bf K} + \sigma^{2} {\bf I} )
+\end{equation}
+And a log marginal likelihood
+\begin{equation}
+\log{ p( {\bf x} ) } = -\dfrac{1}{2} {\bf x}^T [ {\bf K} + \sigma^{2} {\bf I} ]^{-1} {\bf x}
+- \dfrac{1}{2}\log{|{\bf K} + \sigma^{2} {\bf I}|}
+- \dfrac{n}{2} \log{2\pi}
+\end{equation}
+Consisting respectively of a data fit term, a complexity term and a constant term.
+
+\subsubsection{Sparse Gaussian processes}
+
+
+\paragraph*{Constructing the ELBO}
+
+We are interested in maximizing
+\begin{equation}
+    \log p_\theta (\b{y}) = \log \int p(\b{y}|\b{f}) p(\b{f}) d\b{f}
+\end{equation}
+with respect to some set of generative parameters $\theta$ (note that we will omit the $\cdot_\theta$ subscript for notational clarity).
+
+We start by introducing a set of inducing points $\b{z} = \{ z_m \}_{m=1}^M$ with corresponding function values (inducing variables) $\b{u} = \{ u_m \}_{m = 1}^M$ which have a prior distribution $p(\b{u}) = \mathcal{N}(0, \b{K}_{uu})$ and a posterior $p(\b{u}|\b{y})$.
+We then introduce a variational distribution $q_\phi(\b{f}, \b{u}) = p(\b{f}|\b{u}) q_\phi(\b{u})$, where
+\begin{equation}
+    q_\phi (\b{u}) = \mathcal{N}(\b{u}; \b{m}, \b{S}).
+\end{equation}
+Here, we have introduced the variational parameters $\phi = \{ \b{m}, \b{S}, \b{z}\}$, and we will drop the $\cdot_\phi$ subscript for notational clarity in what follows.
+
+We start by constructing a variational lower bound (ELBO):
+\begin{equation}
+    \log p(\b{y}) \geq \mathbb{E}_{q(\b{u}, \b{f})} \left [ \log p(\b{y} | \b{u}, \b{f}) \right ] - KL \left [ q(\b{u}, \b{f}) || p(\b{u}, \b{f}) \right ].
+\end{equation}
+Importantly, maximizing this ELBO is equivalent to minimizing
+\begin{equation}
+    KL \left [ q(\b{f}, \b{u}) || p(\b{f}, \b{u} | \b{y}) \right ]
+\end{equation}
+with respect to the variational parameters $\phi$, and this will be important when we compute our predictive distribution in \Cref{eq:pred_pf}.
+
+We then note that $p(\b{y} | \b{u}, \b{f}) = p(\b{y} | \b{f})$.
+Defining a distribution
+\begin{equation}
+    q(\b{f}) = \int p(\b{f} | \b{u}) q(\b{u}) d \b{u},
+\end{equation}
+this allows us to integrate out $\b{u}$ in the expectation:
+\begin{equation}
+    \label{eq:lik}
+    \mathbb{E}_{q(\b{u}, \b{f})} \left [ \log p(\b{y} | \b{u}, \b{f}) \right ] =
+    \mathbb{E}_{q(\b{f})} \left [ \log p(\b{y} |\b{f}) \right ].
+\end{equation}
+
+We also note that
+\begin{align}
+    \label{eq:kl}
+    KL \left [ q(\b{u}, \b{f}) || p(\b{u}, \b{f}) \right ]
+    &= \int q(\b{u}, \b{f}) \log \frac{q(\b{u}, \b{f})}{p(\b{u}, \b{f})} d\b{f} d\b{u}\\
+    &= \int q(\b{u}) p(\b{f}|\b{u}) \log \frac{q(\b{u}) p(\b{f} | \b{u})}{p(\b{u}) p(\b{f} | \b{u})} d\b{f} d\b{u}\\
+    &= \int q(\b{u}) \log \frac{q(\b{u})}{p(\b{u})} d\b{u}\\
+    &= KL \left [ q(\b{u}) || p(\b{u}) \right ].
+\end{align}
+
+Putting \Cref{eq:lik} and \Cref{eq:kl} together, our ELBO simplifies to
+\begin{equation}
+    \log p(\b{y}) \geq \mathbb{E}_{q(\b{f})} \left [ \log p(\b{y} | \b{f}) \right ] - KL \left [ q(\b{u}) || p(\b{u}) \right ].
+\end{equation}
+
+\paragraph*{Computing the likelihood term}
+
+We now turn our attention to the likelihood term $\mathbb{E}_{q(\b{f})} \left [ \log p(\b{y} | \b{f}) \right ]$.
+To evaluate this, we need $q(\b{f})$.
+We note that everything is jointly Gaussian with a prior given by our kernel
+\begin{equation}
+    p \left ( \begin{bmatrix} \b{f}\\ \b{u} \end{bmatrix} \right )
+    = \mathcal{N} \left ( 0, \begin{bmatrix} \b{K}_{ff} & \b{K}_{fu}\\ 
+        \b{K}_{uf} & \b{K}_{uu} \end{bmatrix} \right ).
+\end{equation}
+From standard Gaussian identities, this gives rise to a conditional distribution
+\begin{equation}
+    \label{eq:cond_pfu}
+    p(\b{f} | \b{u}) = \mathcal{N} (  \b{f}; \b{K}_{fu} \b{K}_{uu}^{-1} \b{u}, \b{K}_{ff} - \b{K}_{fu} \b{K}_{uu}^{-1} \b{K}_{uf} ).
+\end{equation}
+We can now compute the marginal distribution $q(\b{f})$ analytically:
+\begin{align}
+    q(\b{f}) &= \int \mathcal{N} ( \b{f}; \b{K}_{fu} \b{K}_{uu}^{-1} \b{u}, \b{K}_{ff} - \b{K}_{fu} \b{K}_{uu}^{-1} \b{K}_{uf} ) \mathcal{N}(\b{u}; \b{m}, \b{S}) d \b{u}\\
+    &= \mathcal{N} ( \b{f}; \b{K}_{fu} \b{K}_{uu}^{-1} \b{m},
+    \b{K}_{fu} \b{K}_{uu}^{-1} \b{S} \b{K}_{uu}^{-1} \b{K}_{uf} + \b{K}_{ff} - \b{K}_{fu} \b{K}_{uu}^{-1} \b{K}_{uf} ).
+    \label{eq:marg_pf}
+\end{align}
+
+
+Assuming that the likelihood factorizes (i.e. $p(\b{y}|\b{f}) = \prod_i p(y_i|f_i)$), we can further simplify the likelihood term by writing
+\begin{equation}
+    \label{eq:lik_fact}
+    \mathbb{E}_{q(\b{f})} \left [ \log p(\b{y} | \b{f}) \right ] = \sum_{i} \mathbb{E}_{q(f_i)} \left [ \log p(y_i | f_i) \right ].
+\end{equation}
+We thus only need the marginal distributions $q(f_i)$, which can be computed efficiently (\Cref{eq:white_marginals}).
+We can then evaluate the 1-dimensional expectations over $f_i$ using either Monte Carlo samples from $q(f_i)$ or with Gauss-Hermite quadrature which has been described extensively elsewhere.
+
+\paragraph*{Computing the KL term}
+
+We now address the KL term $KL \left [ q(\b{u}) || p(\b{u}) \right ]$.
+This has a closed-form expression given by
+\begin{equation}
+    KL \left [ \mathcal{N}(\b{u}; \b{m}, \b{S} ) || \mathcal{N}(\b{u}; 0, \b{K}_{uu}) \right ]
+    = 0.5 \left ( tr(\b{K}_{uu}^{-1} \b{S})
+    + \b{m}^T \b{K}_{uu}^{-1} \b{m} - k + \log |\b{K}_{uu}| - \log |\b{S}|
+     \right ).
+\end{equation}
+Together with \Cref{eq:lik_fact}, this allows us to evaluate the ELBO in a differentiable manner which in turn provides a framework for optimizing the generative parameters $\theta$ of our model ($\ell, \sigma_{signal}^2, \sigma_{noise}^2, ...$).
+
+\paragraph*{Inference}
+
+To perform inference, we are also interested in the distribution over function values $p(\b{f}^*)$ at some set of test locations $\b{x}^*$.
+Recalling that our variational inference procedure gives rise to $q(\b{u}, \b{f}) \approx p(\b{u}, \b{f} | \b{y})$, we can write
+\begin{align}
+    p(\b{f}^* | \b{y}) &= \int p(\b{f}^*, \b{f}, \b{u} | \b{y}) d\b{f} d\b{u}\\
+    &= \int p(\b{f}^* | \b{f} \b{u}) p(\b{f}, \b{u} | \b{y})  d\b{f} d\b{u}\\
+    &\approx \int p(\b{f}^* | \b{f} \b{u}) q(\b{f}, \b{u}) d\b{f} d\b{u}\\
+    &= \int p(\b{f}^* | \b{f} \b{u}) p(\b{f} | \b{u}) q(\b{u})  d\b{f} d\b{u}\\
+    &= \int p(\b{f}^*, \b{f} | \b{u}) q(\b{u})  d\b{f} d\b{u}\\
+    &= \int p(\b{f}^* | \b{u}) q(\b{u}) d\b{u}.
+    \label{eq:pred_pf}
+\end{align}
+Conveniently, we already know the form of this marginal distribution from \Cref{eq:marg_pf}.
+It is interesting to note that this predictive distribution does not depend on the data $\b{y}$ but is entirely summarized by the parameters $\phi$ of our variational distribution $q(\b{u})$.
+
+\paragraph{The `whitened' parameterization}
+
+We can simplify the evaluation of our ELBO by parameterizing $q(\b{u}) = \mathcal{N}(\b{u}; \b{K}_{uu}^{\frac12} \b{m}, \b{K}_{uu}^{\frac12} \b{S} \left ( \b{K}_{uu}^T \right )^{\frac12})$.
+Here, $\b{K}_{uu}^{\frac12}$ can be any matrix factorization with the usual choice being the lower triangular cholesky factor $\b{L}_{uu}$ s.t. $\b{L}_{uu} \b{L}_{uu}^T = \b{K}_{uu}$.
+Since the KL divergence is invariant to the affine transformation $\b{x} \rightarrow \b{L}^{-1} \b{x}$, we can rewrite KL term from
+\begin{equation}
+    KL \left [ \mathcal{N}(\b{u}; \b{L} \b{m}, \b{L} \b{S} \b{L}^T) || \mathcal{N}(\b{u}; 0, \b{K}_{uu}) \right ]
+\end{equation}
+to
+\begin{equation}
+    \label{eq:KL_white}
+    KL \left [ \mathcal{N}(\b{u}; \b{m}, \b{S}) || \mathcal{N}(\b{u}; 0, \b{I}) \right ] = 0.5 \left ( tr(\b{S})
+    + \b{m}^T \b{m} - k - \log |\b{S}|
+     \right ),
+\end{equation}
+which gets rid of all terms involving $\b{L}_{uu}$.
+
+For this whitened parameterization, the distribution $q(\b{f})$ is given by (\Cref{eq:marg_pf}):
+\begin{equation}
+    q(\b{f}) = \mathcal{N} ( \b{f}; \b{K}_{fu} (\b{L}^{-1})^T \b{m},
+    \b{K}_{fu} (\b{L}^{-1})^T \b{S} \b{L}^{-1} \b{K}_{uf} + \b{K}_{ff} - \b{K}_{fu} \b{K}_{uu}^{-1} \b{K}_{uf} ).
+\end{equation}
+We then write $\b{S} = \b{S}_L \b{S}_L^T$, denote $\b{\Psi} = \b{K}_{fu} (\b{L}^{-1})^T$, and note that for any matrix $\b{A}$
+\begin{equation}
+    (\b{A} \b{A})_{ii} = \sum_j \b{A}_{ij} \b{A}^T_{ji} = \sum_j \b{A}_{ij}^2.
+\end{equation}
+This allows us to compute the marginal variance $\b{\Sigma}_{ii}$ of $q(\b{f})$ as
+\begin{equation}
+    \label{eq:white_marginals}
+    \b{\Sigma}_{ii} = \b{K}_{ff, ii} + \sum_j (\b{\Psi} \b{S}_L)_{ij}^2 - \sum_{j} \b{\Psi}_{ij}^2.
+\end{equation}
+Additionally, the mean parameters $\b{\mu}_i$ are easily computed as $(\b{\Psi} \b{m})_i$.
+
+Together, $\b{\mu}_i$ and $\b{\Sigma}_{ii}$ fully specify the marginal distributions $q(f_i)$.
+We also recall from \Cref{eq:lik_fact} that this is all we need to compute the likelihood term in our ELBO, while the KL term is easily computed according to \Cref{eq:KL_white}.
+Finally, these computations are all differentiable, which allows us to perform gradient-based optimization of both the generative parameters $\theta$ and the variational parameters $\phi$.
+After convergence, inference is performed according to \Cref{eq:pred_pf}.

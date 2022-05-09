@@ -1,0 +1,125 @@
+\subsubsection{Relation to biology}
+
+\paragraph{Motivation}
+
+The animal brain has the ability to learn many new behaviors over the course of their lives.
+Despite this flexibility, most of the learned behaviors also remain highly stable after learning, even after long periods without continued practice.
+The stability of such remembered behaviors is seemingly at odds with the high degree of synaptic turnover observed in the brain \citep{holtmaat2009experience,xu2009rapid,yang2009stably}.
+
+In agreement with a turnover of dendritic spines and other cellular components, many studies in neuroscience have found that task-associated neural representation drift over timescales of a few hours to days or weeks \citep{rokni2007motor,carmena2005stable,driscoll2017dynamic,schoonover2020representational}.
+Such unstable single-neuron representations have been hypothesized to facilitate stable behavior either by drifting in a functional `null-space' \citep{gallego2020long}, or by limiting drift to directions that only require minor changes to a downstream neural decoder \citep{rule2020stable}.
+However, under this hypothesis it remains an open question how neural circuits would identity such null- or decoder-limiting directions in which to drift.
+
+On the other hand, a separate set of studies have suggested that neural representations of a given task tend to be stable after learning \citep{chestek2007single,flint2016long,dhawale2017automated}.
+This is consistent with the observation of long-term stability in the zebra finch song circuit after initial learning in the juvenile bird \citep{katlowitz2018stable}.
+However, in the context of zebra finch song learning, plasticity is limited to a single `critical period' during development \citep{sizemore2011premotor} and the resulting circuit does not have to adapt to learning new behaviors.
+In contrast, the brain regions studied in mammals tend to undergo continual learning throughout life and thus must maintain the ability to learn and adapt in the face of these seemingly stable representations.
+
+While the topic of stable neural representations and the apparent paradox with lifelong learning has long been a topic of interest and study in the neuroscience community, it has also recently begun to be addressed in the machine learning literature.
+In particular, while biological agents are capable of learning over a lifetime with little to no loss in performance on previously learned tasks, artificial agents tend to undergo `catastrophic forgetting' whereby the performance on previous tasks deteriorates rapidly as new tasks are learned.
+This shortcoming of artificial agents has been addressed using methods ranging from `replay' of examples from previous tasks \citep{van2018generative,pan2020continual,li2017learning,shin2017continual} to regularizing parameters important for previous tasks \citep{kirkpatrick2017overcoming,ritter2018online,nguyen2017variational}, and projecting parameter updates into subspaces that do not interfere with previous tasks \citep{zeng2019continual,duncker2020organizing}.
+
+In this short note, we attempt to relate experimental findings on neural stability to the machine learning literature and consider how qualitatively different approaches to addressing the continual learning problem can lead do different levels of representational stability at the single-neuron level.
+We discuss our results in light of experimental findings from different regions of the brain in terms of both the stability of the neural representations and experimental evidence for different mechanisms that might help overcome catastrophic forgetting.
+
+To illustrate the implications of different continual learning algorithms on the stability of neural representations, we follow \citet{kao2021natural} and consider a simple dataset which involves classifying sequential digits \citep{de2016incremental}.
+In contrast to most approaches to continual learning, we will work with a recurrent neural network models with dynamics given by 
+\begin{align}
+	\label{eq:dynamics}
+	\b{r}_t & = \phi(\b{A} \b{r}_{t-1} +  \b{B}\b{x}_t 
+	+ \b{\xi}_t) = \phi(\b{W} \b{z}_t + \b{\xi}_t)       \\
+	\b{y}_t & \sim p(\b{y}_t | \b{C} \b{r}_t)     
+\end{align}
+%
+where we define $\b{z}_t = (\b{r}_{t-1}^\top, \b{x}_t^\top)^\top$, $\b{W} = (\b{A}^\top, \b{B}^\top)^\top$, and time is indexed by $t$.
+Here, $\b{r} \in \mathbb{R}^{N_{rec} \times 1}$ are the network activations, $\b{x} \in \mathbb{R}^{n_{in} \times 1}$ are the inputs, and $\b{y} \in \mathbb{R}^{n_{out} \times 1}$ are the network outputs.
+We will define the expected loss on task $k$ as
+\begin{equation}
+    \ell_k(\b{\theta}) = \mathbb{E} \left [ \sum_t \log p(\b{y}^{(k)}_t | \b{C} \b{r}^{(k)}_t) \right ],
+\end{equation}
+where $\b{x}^{(k)}_t$ and $\b{y}^{(k)}$ are drawn from the data distribution for task $k$ and the expectation is computed at every iteration from a set of Monte Carlo samples.
+Continual learning in such recurrent neural networks has recently become a topic of interest in the machine learning community \citep{ehret2020continual, duncker2020organizing} and is of significant interest when trying to understand how catastrophic forggeting is mitigated in the brain; a network with a high degree of recurrency.
+
+\subsection*{Continual learning algorithms}
+
+We will consider two broad classes of algorithms, namely those that regularize the \emph{parameters} of the network and those that regularize the \emph{input-output mapping} of the network.
+From the first class, we consider `natural continual learning' (NCL; \citealp{kao2021natural}) which regularizes the loss function on later tasks using the posterior over network parameters from previous tasks as a prior.
+This is combined with a form of gradient projection that encourages searching for local minima in the space of solutions to previous tasks to yield the following learning rule on task $k$:
+\begin{equation}
+    \label{eq:ncl}
+    \b{\theta} \leftarrow \b{\theta} - \gamma \left [ \b{\Lambda}_{k-1}^{-1} \nabla_\theta \ell_k(\b{\theta}) + (\b{\theta} - \b{\mu}_{k-1}) \right ]
+\end{equation}
+where $\gamma$ is a learning rate, $\b{\theta}$ are the network parameters, and $q_\phi(\b{\theta}) = \mathcal{N}(\b{\theta}; \b{\mu}_{k-1}, \b{\Lambda}_{k-1}^{-1})$ is a Laplace approximation to the posterior over $\b{\theta}$ constructed from tasks $1$ to $k$ (see \citealp{kao2021natural} for details).
+
+From the second class, we will consider a relatively naïve implementation of continual learning using replay.
+In this method, the learner estimates the task specific loss $\ell_k(\theta)$ as above.
+In addition, the learner gets to `replay' a set of examples $\{ \b{x}^{(k')}, \b{y}^{(k')} \}$ from previous tasks at every iteration to estimate the expected loss on earlier tasks
+\begin{equation}
+    \label{eq:replay}
+    \ell_{<k}(\b{\theta}) = \frac{1}{k-1} \sum_{k' = 1}^{k-1} \mathbb{E} \left [ \sum_t \log p(\b{y}^{(k')}_t | \b{C} \b{r}^{(k')}_t) \right ].
+\end{equation}
+The parameters are then updated as
+\begin{equation}
+    \b{\theta} \leftarrow \b{\theta} - \gamma \left [ \frac{1}{k} \nabla_\theta \ell_k(\b{\theta}) + \frac{k-1}{k} \nabla_\theta \ell_{<k}(\b{\theta}) \right].
+\end{equation}
+Note that while we explicitly replay examples drawn from the true data distribution for previous tasks, these examples can instead be drawn from a generative model that is learned in a continual fashion together with the discriminative model \citep{van2018generative, van2020brain}.
+
+\subsection*{Task representations}
+
+%\input{content/_fig_dyn_replay.tex}
+
+We trained an RNN with 30 recurrent units on 15 sequential binary classification tasks from the extended SMNIST dataset used by \citet{kao2021natural}.
+We stored the parameters of the network after each task and simulated the response of the corresponding networks to a set of 100 digits drawn from the task distribution of classifying 4 vs 5 (task $k^*=2$) or from classifying 1 vs 7 (task $k^*=3$).
+This corresponds to returning to an old task ($k^*=2$ or $k^*=3$) at different stages of the sequential learning process ($k \in [1, 15]$).
+We projected the resulting dynamics for each task into a low-dimensional latent space by fitting a factor analysis model to $\{ \b{r}_t \}_1^T$ for the network specified by the parameters immediately after learning the corresponding task (i.e. $k=2$ or $k=3$).
+We then projected the dynamics after each task into the same latent space to visualize how they changed over time.
+This procedure reflects the approach used by \citet{kao2021natural}.
+
+For networks trained by NCL, we found that the resulting latent trajecories changed with task learning but were subsequently stable %(\Cref{fig:smnist_dyn}).
+To quantify this at the single neuron level, we computed the correlation between the network dynamics $\{ \b{r}_t \}_1^T$ after each task $k \in [1, 15]$ and the dynamics right after the corresponding task $k^*$ had been learned.
+Here we found a high degree of stability with an $r^2$ value of 0.95 for the 4 vs 5 task after learning an additional 13 tasks, and an $r^2$ value of 0.99 for the 1 vs 7 task after learning an additional 12 tasks.
+This is consistent with neuroscience studies suggesting a high degree of representational stability after learning \citep{dhawale2017automated,chestek2007single,flint2016long,katlowitz2018stable}.
+Furthermore, the learning rule employed by NCL regularizes changes in parameters from those used in previous tasks if they are `important' for that task (c.f. \Cref{eq:ncl}; see also \citealp{kirkpatrick2017overcoming}).
+This is mechanistically similar to the observation of a stable subset of dendritic spines following task learning in previous experimental work \citep{yang2009stably,fu2012repetitive} which lends some support to the implementation of mechanisms resembling parameter regularization for continual learning in biological systems.
+
+When we trained the network using replay instead of NCL, the overall task performance was comparable.
+However, in contrast to NCL (and other weight regularization approaches such as EWC and KFAC), the networks trained with replay exhibited drifing representations of previously acquired tasks.
+When projecting the 30-dimensional dynamics into a low-dimensional space, we found that the network learned separable dynamics for each task, and that the two classes remained separable after further learning %(\Cref{fig:dyn_replay}).
+However, the dynamics were no longer constrained to remain constant and instead drifted significantly during training with final $r^2$ values of 0.27 and 0.36 for the two tasks when compared to the representation immediately after task learning.
+
+\subsection*{Local and global loss functions}
+
+We can understand the qualitative differences in task-associated dynamics between networks trained with NCL and replay by considering the locality of the loss function that is optimized.
+Consider an example loss function $\ell_1$ for a hypothetical `task 1' with two nearby local minima separated by a small energy barrier %(\Cref{fig:laplace}; left).
+When proceeding to train on task 2 after learning task 1, the replay-based approach to continual learning (\Cref{eq:replay}) provides an unbiased estimate of $\ell_1(\b{\theta})$ although it may be very noisy if the number of replay events is small.
+This allows $\b{\theta}$ to move between adjacent local minima with task 1 performance, and the rate at which these transitions occur will increase with increasing noise level.
+If replay examples are instead drawn from a learned generative model, they are likely to provide a biased estimate of $\tilde{\ell}_1 \approx \ell_1$ but will still allow relatively uninhibited transitions between nearby minima of the approximate loss function.
+
+%\input{content/_fig_laplace.tex}
+
+Consider instead the Laplace approximation to $\ell_1(\theta)$ %(\Cref{fig:laplace}; right).
+In this case, the approximation $\tilde{\ell}_1 \approx \ell_1$ is inherently local and will always favour parameters $\b{\theta}$ that resemble the prior mean $\b{\mu}_1$.
+This will break degeneracies between otherwise degenerate parameter sets and encourage a constancy of parameters that drives a constancy of dynamics.
+Indeed such a constancy of dynamics is directly built into a recent projection-based approach to continual learning by \citet{duncker2020organizing}.
+A simple example of the degeneracy breaking introduced by the Laplace approximation is seen when permuting the identity of all recurrent units using some permutation operator $\hat{P}_u$.
+In the parameters $\theta$ are permuted accordingly, this will lead to a system with the exact same task performance.
+However, under the Laplace approximation, this new parameter set $\theta = \hat{P}_u(\mu)$ will have a much higher energy than the original parameters $\mu$ given the $||\b{\theta} - \b{\mu}||^2_2$ term of the Laplace loss function (see e.g. \citealp{huszar2017quadratic} for an explicit derivation of this loss).
+While we have discussed such degeneracy breaking for the Laplace approximation here, the same is true for any local approximation that restricts changes from the parameters used in a previous task or projects gradients based on the parameters or dynamics observed in previous task.
+
+\paragraph{Summary}
+In this short note we have highlighted how different continual learning algorithms can lead to qualitatively different properties of neural dynamics in recurrent networks over the course of learning.
+In particular, we have argued that continual learning algorithms based on local parameter regularization or projection matrices constructed from previous tasks will tend to preserve neural dynamics and lead to stable representations even as further tasks are learned.
+In contrast, algorithms that regularize the input-output mapping e.g. via exact or generative replay are susceptible to representational drift over the course of further learning.
+
+It is interesting to speculate whether such algorithmic differences may explain some of the discrepancies in experimental reports of neural stability after task learning.
+Notably, several reports suggesting stable neural representations have centered around motor circuits \citep{dhawale2017automated,chestek2007single,flint2016long,gallego2020long} where previous work has also suggested that representations stabilize over learning \citep{ganguly2009emergence, peters2014emergence}.
+This is consistent with our results for parameter regularized networks (Fig) which rely on restricting how much particular connections in the network can change depending on their importance for prior tasks.
+Importantly, experimental evidence for such regularization of specific connections has previously been reported in rodent motor cortex \citep{yang2009stably,fu2012repetitive} suggesting a potential mechanistic explanation for the observed representational stability.
+
+Conversely, drifting neural representations have been reported in several `cognitive' regions including hippocampus \citep{ziv2013long} and posterior parietal cortex \citep{driscoll2017dynamic,rule2020stable}.
+This is consistent with the important role of hippocampal replay in memory consolidation which is well-established in the neuroscience literature \citep{wilson1994reactivation, van2016hippocampal, carr2011hippocampal}.
+Additionally, replay-like events have been observed in neocortical regions including posterior parietal cortex \citep{qin1997memory}.
+It is possible that such neural replay of past experiences provides a substrate for continual learning in these brain regions which obviates the need for stability at the level of single synapses and allows for continually drifting representations as in %\Cref{fig:dyn_replay}.
+
+Finally, we note that we have only considered `replay' in the form of reproducing a set of inputs and target outputs $\{ \b{x}, \b{y}\}$ from previous tasks with no constraints on the intermediate representations.
+However, it is also possible that replay events in the brain will constrain intermediate representations which would likely stabilize the post-learning dynamics more than the simple input-output replay considered in this note.

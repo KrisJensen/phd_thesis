@@ -1,0 +1,93 @@
+\section{Variational inference}
+
+Since we will be working with variational inference (variational Bayes) it seems reasonable to provide a brief overview. Much of this is due to \cite{mackay2003information, kingma2013auto}.
+
+We will denote our latents $X$ and our observations $Y$, treating both as matrices.
+We thus have 
+\begin{equation}
+X \sim P(X)
+\end{equation}
+\begin{equation}
+Y \sim P(Y | X)
+\end{equation}
+\begin{equation}
+P(X | Y) = \dfrac{P(Y|X) P(X)}{P(Y)}
+\end{equation}
+We would really like to have a simple expression for $P(X|Y)$, but unfortunately thatis generally intractable. Instead we will approximate this posterior with a variational distribution
+\begin{equation}
+Q_\theta (X) \approx P(X|Y)
+\end{equation}
+which we parameterize by a set of parameters $\theta$ using which we can optimize Q (these are suppressed in the following for notational simplicity). The degree of similarity to the true posterior is measured by the Kullback-Leibler (KL) divergence
+\begin{equation}
+\begin{split}
+KL(Q || P(X|Y)) &= \int_X{ Q(X) \log{\dfrac{Q(X)}{P(X|Y)}}  dX}\\
+			&= \mathbb{E}_Q(\log{Q}) - \mathbb{E}_Q(\log{P(X|Y)})\\
+			&=\mathbb{E}_Q(\log{Q}) - \mathbb{E}_Q(\log{P(X, Y)}) + \mathbb{E}_Q(\log{P(Y)})
+\end{split}
+\end{equation}
+Where $\mathbb{E}_Q(\cdot)$ indicates expectations wrt. the variational distribution Q.
+We now note that since $P(Y)$ is independent of $X$
+\begin{equation}
+\mathbb{E}_Q(\log{P(Y)}) = \log{P(Y)} \mathbb{E}_Q(1) =  \log{P(Y)} = \text{Constant}
+\end{equation}
+
+We thus isolate this term and write
+\begin{equation}
+\begin{split}
+\log{P(Y)} &= KL(Q || P(X|Y)) + \mathbb{E}_Q(\log{P(X, Y)}) - \mathbb{E}_Q(\log{Q})\\
+		&= KL(Q || P(X|Y)) + ELBO
+\end{split}
+\end{equation}
+Where we define the \textit{Evidence Lower BOund} as 
+
+\begin{equation}
+ELBO = \mathbb{E}_Q(\log{P(X, Y)}) - \mathbb{E}_Q(\log{Q})
+\end{equation}
+This can also be rewritten as the negative energy of the system plus the (variational) entropy of the variational distribution since $P_i \propto \exp{(-E_i/T)}$ and $\mathbb{E}_Q(\log{Q}) = \int_X{Q(X) \log{Q(X)} dX} = -\mathbb{H}(Q)$. This equivalent to a negative free energy $T^{-1} F = T^{-1} E - H$
+
+By maximixing the ELBO, we are simultaneously minimizing the KL divergence between the Q and the true posterior, providing a best estimate giving our parameterization. Additionally, at convergence the ELBO provides a lower bound to the true log likelihood since $KL(\cdot || \cdot) \geq 0$.
+
+We can choose a variational function Q for which $H(Q | \theta)$ is analytically computable (and thus differentiable), leaving only the pesky $\mathbb{E}_Q(\log{P(X, Y)})$ which we compute by Monte Carlo sampling
+\begin{equation}
+ \mathbb{E}_Q(\log{P(X, Y)}) \approx \dfrac{1}{m} \sum_{X_i \sim Q(X)}^m{ \log{P(Y, X_i)} }
+\end{equation}
+Which only requires the joint distribution to be tractable (as it hopefully will be).
+
+The only downside is that to optimize things we now need to differentiate through a monte carlo sampler which seems hard.
+However, this becomes tractable using the reparameterization trick. Here we want to sample from a parameterized distribution
+\begin{equation}
+X \sim Q_\theta(X)
+\end{equation}
+But we rewrite this as a parameterized function of a sample from a fixed distribution.
+\begin{equation}
+X = g_\theta(\tilde{X})
+\end{equation}
+\begin{equation}
+\tilde{X} \sim \tilde{Q}(\tilde{X})
+\end{equation}
+Note the key idea here is that we have moved the parameters $\theta$ from the sampling process to the evaluation of a differentiable function, turning the gradient of our expectation into the expectation of a gradient over a fixed distribution $\tilde{Q}$. This allows stochastic gradients to be computed by Monte Carlo sampling, and we can perform SGD on these.
+
+For example for the normal distribution, we can write
+\begin{equation}
+X \sim \mathcal{N}(\mu, \Sigma)
+\end{equation}
+where $Q = \mathcal{N}(\mu, \Sigma)$. We can rewrite this by drawing $\tilde{X}$ from
+\begin{equation}
+\tilde{X} \sim \tilde{Q} = \mathcal{N}(0, \mathbf{I})
+\end{equation}
+and computing
+\begin{equation}
+X = g_\theta(X) = \mu + L^T X
+\end{equation}
+Where $\Sigma = L L^T$ is a Cholesky decomposition.
+Similarly for the d-dimensional multivariate normal, we can compute the entropy exactly as
+\begin{equation}
+H(Q | \mu, \Sigma) = \dfrac{1}{2} \log{\left [ (2 \pi e)^d |\Sigma| \right ]}
+\end{equation}
+Which allows us to compute the ELBO in each iteration by drawing $\tilde{X}_{1:m} \sim \mathcal{N}(0, \mathbf{I})$ and computing
+\begin{equation}
+ELBO(\mu, \Sigma) = \dfrac{1}{m} \sum_i^m{ \left [ \log{P \left ( Y, g_{\mu, \Sigma}(\tilde{X}_i) \right ) } \right ] } + \dfrac{1}{2} \log{\left [ (2 \pi e)^d |\Sigma| \right ]} 
+\end{equation}
+Which we can differentiate through algorithmically to get the gradients.
+
+\subsubsection{Reparameterizing distributions on Lie groups}

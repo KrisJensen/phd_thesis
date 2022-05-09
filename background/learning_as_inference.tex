@@ -1,0 +1,114 @@
+\section{Learning as inference}
+
+\subsubsection*{Generative model}
+
+In this short note, we will derive some of the basic equations of the `learning as inference' framework and consider how they might relate to navigation in biological agents.
+The derivations will largely follow \citep{levine2018reinforcement}, which will also serve as a useful reference for more details and discussions of related work.
+
+We consider an MDP of the form
+\begin{align}
+    p(\tau ) & = p(\{ s_t, r_t, a_t \}_{t = 0}^T )                           \\
+             & = p(s_0) \prod_t^T p(s_{t+1}, r_t | s_t, a_t) \pi(a_t | s_t),
+\end{align}
+where $\pi(a|s)$ is some policy which we seek to learn.
+
+To do inference in this setting, we now introduce an additional class of stochastic binary `optimality' variables \citep{levine2018reinforcement} $O_t \in [0, 1]$, which are defined by their distribution
+\begin{equation}
+    p(O_t | s_t, a_t) \propto \exp r(s_t, a_t).
+\end{equation}
+In the case where $r$ is not a deterministic function of $s_t, a_t$, we can simply use its expectation.
+While this does not define `optimality' in the sense of maximizing reward for any MDP, $O_t$ is `optimal' in the sense that we will be optimizing for $p(\{ O_t = 1 \}_0^T)$.
+In the following, we will define $p(O_t) := p(O_t = 1)$ for notational simplicity.
+
+To proceed, we now \emph{condition} on optimality and compute the corresponding posterior distribution over trajectories $\tau$:
+\begin{equation}
+    p(\tau | O_{1:T}) \propto p(O_{1:T} | \tau) p(\tau).
+\end{equation}
+
+\subsubsection*{Approximate inference}
+
+This inference problem is entirely non-trivial, and to proceed we will introduce a variational distribution, which factorizes in the same way as the true $p(\tau)$, and which uses the ground truth transition function:
+\begin{align}
+    q_\phi(\tau) & = q_\phi(s_0) \prod_t^T q_\phi(s_{t+1}, r_t | s_t, a_t) q_\phi(a_t | s_t) \\
+                 & = p(s_0) \prod_t^T p(s_{t+1}, r_t | s_t, a_t) q_\phi(a_t | s_t).
+\end{align}
+We will learn $\phi$ to minimize the KL divergence between $q_\phi(\tau)$ and $p(\tau | O_{1:T})$:
+\begin{align}
+    KL[q(\tau) || p(\tau | O_{1:T})] & = \mathbb{E}_q \left [ \log q(\tau) - \log p(\tau | O_{1:T}) \right ]                                                                \\
+                                     & = \mathbb{E}_q \left [ \log q(\tau) - \log p(O_{1:T} | \tau) - \log p(\tau) + \log p(O_{1:T})  \right ]                              \\
+                                     & = \log p(O_{1:T}) - \mathbb{E}_q \left [\log p(O_{1:T} | \tau) \right ] + \mathbb{E}_q \left [ \log q(\tau)  - \log p(\tau) \right ] \\
+                                     & = \log p(O_{1:T}) - \mathcal{L},
+\end{align}
+where
+\begin{equation}
+    \mathcal{L} := \mathbb{E}_q \left [log p(O_{1:T} | \tau) \right ] - KL[q(\tau) || p(\tau)]
+\end{equation}
+is the so-called `evidence lower bound' (ELBO).
+Since the marginal likelihood
+\begin{equation}
+    \log p(O_{1:T}) = \log \int p(O_{1:T} | \tau) p(\tau) d\tau
+\end{equation}
+does not depend on $\phi$, we see that minimizing $KL[q(\tau) || p(\tau | O_{1:T})]$ w.r.t. $\phi$ is equivalent to maximizing $\mathcal{L}$, which is how VI is implemented in practice.
+Additionally, since $KL[q||p] \geq 0$, we also see that $\mathcal{L}$ is a \emph{lower bound} on the marginal likelihood.
+\begin{equation}
+    \log p(O_{1:T}) \geq  \mathbb{E}_{q_\phi(\tau)}[\log p(O_{1:T} | \tau) ] - KL[q_\phi(\tau) || p(\tau)].
+\end{equation}
+
+We now insert our equation for $\log p(O | a, s) = r$ to arrive at the LAI objective
+\begin{equation}
+    \label{eq:objec}
+    \mathcal{L} = \mathbb{E}_q \left [ \sum_t r_t(a_t, s_t) \right ] - KL[q(\tau) || p(\tau)].
+\end{equation}
+We see that this recovers our `standard' RL objective of maximizing expected reward, but with an additional regularizer towards the prior $p(\tau)$.
+Furthermore, we note that if we introduce a temperature parameter $\beta$ in the distribution over $O$,
+\begin{equation}
+    p_\beta(O_t | s_t, a_t) \propto \exp \beta r_t(s_t, a_t),
+\end{equation}
+we instead need to maximize
+\begin{align}
+    \mathcal{L}_\beta & = \beta \mathbb{E}_q \left [log p_{\beta = 1}(O_{1:T} | \tau) \right ] - KL[q(\tau) || p(\tau)] \\
+                      & \propto
+    \mathbb{E}_q \left [log p_{\beta = 1}(O_{1:T} | \tau) \right ] - \beta^{-1} KL[q(\tau) || p(\tau)].
+\end{align}
+$\beta$ thus scales the relative importance of reward (through the likelihood) and the prior over actions.
+In the following, we will let $\beta = 1$ for notational simplicity and simply note that (i) this provides a way of scaling the prior while remaining faithful to the Bayesian formulation, and (ii) as $\beta \rightarrow \infty$, we recover canonical non-Bayesian RL since the regularizer goes to zero.
+
+Finally we note that the transition terms cancel in the KL, leaving us with a sum of KL-divergences between the policy and the prior at every timestep:
+{ \small
+\begin{align}
+    KL[q(\tau) || p(\tau)] & = \mathbb{E}_q \left [ \log q(\tau)  - \log p(\tau) \right ]                                                                                                                       \\
+                           & = \mathbb{E}_q \left [ \log p(s_0) + \sum_t^T ( \log p(r_t | s_t, a_t) + \log q_\phi(a_t | s_t) ) - \log p(s_0) - \sum_t^T ( \log p(r_t | s_t, a_t) + \log p(a_t | s_t) ) \right ] \\
+                           & = \mathbb{E}_q \left [ \sum_t (\log q_\phi(a_t | s_t) - \log p(a_t | s_t) ) \right ]                                                                                               \\
+                           & = \sum_t KL[q_\phi(a_t | s_t) || p(a_t | s_t)]
+\end{align}
+}
+
+\subsubsection*{Gradient estimation}
+
+Here we will take a quick aside to discuss \emph{how} to optimize the objective in \Cref{eq:objec}, defining $R(\tau) := \sum_t r_t$ and $R_t := \sum_{t' \geq t} r_{t'}$ for notational simplicity.
+To estimate gradients, we use the `log derivative trick' commonly used in policy gradients:
+\begin{align}
+    \nabla_\phi \mathbb{E}_{q_\phi} \left [ R(\tau) \right ] & =  \mathbb{E}_{q_\phi} \left [ R(\tau) \nabla_\phi \log q_\phi (\tau) \right ]        \\
+                                                             & = \mathbb{E}_{q_\phi} \left [ \sum_t R_t \nabla_\phi \log q_\phi(a_t | s_t) \right ].
+\end{align}
+We can then estimate the expectation over $q_\phi$ by sampling rollouts of the agent given the policy and using Monte Carlo estimates of $R_t \nabla_\phi \log q_\phi(a_t | s_t)$.
+Since the KL term also involves an expectation over $q$, we have to use the same log derivative trick here:
+\begin{align}
+    \nabla_\phi \sum_t \mathbb{E}_{q_\phi} \left [ \log q_\phi(a_t|s_t) - \log p(a_t | s_t) \right ]
+     & =  \mathbb{E}_{q_\phi} \sum_t \nabla_\phi \log q_\phi(a_t | s_t) \left [ \log q_\phi(a_t|s_t) - \log p(a_t | s_t) \right ].
+\end{align}
+However, as we discuss further below, some canonical RL algorithms can also be recovered from this framework by approximating $\nabla_\phi \mathbb{E}_q [ KL[q || p] ] \approx \mathbb{E}_q [ \nabla_\phi KL[q || p] ] $.
+
+\subsubsection*{Choice of prior}
+
+\paragraph{Uniform prior}
+First, let us assume a uniform prior over actions $p(a_t | s_t) = 1/|\mathcal{A}|$.
+In this case, we can ignore the log prior term from an optimization perspective and we arrive at the objective
+\begin{equation}
+    \mathcal{L} = \mathbb{E}_q \left [ \sum_t r_t(a_t, s_t) \right ] + \sum_t H(q_\phi(a_t | s_t)),
+\end{equation}
+where $H(q) = \mathbb{E}_q [- \log q]$ is the \emph{entropy} of the policy.
+Learning as inference thus naturally gives rise to `maximum entropy' reinforcement learning (MERL).
+Here it is worth noting an important difference from standard entropy regularization.
+In MERL, we compute gradients of the form $\nabla_\phi \mathbb{E}_{q_\phi(\tau)} [\log q_\phi(\tau)]$ using the log derivative trick, while standard entropy regularization uses gradients of the form $\mathbb{E}_{q_\phi(\tau)} [\nabla_\phi \log q_\phi(\tau)]$.
+In other words, instead of simply increasing the entropy of the policy given the trajectory, MERL also increases the probability of moving to high-entropy regions of state space as it optimizes w.r.t. the distribution we are taking expectations over.
